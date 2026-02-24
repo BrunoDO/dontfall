@@ -3,85 +3,89 @@ import random
 import os
 import streamlit as st
 import numpy as np
+import time
 
-# --- 1. STREAMLIT SETUP ---
-st.set_page_config(layout="centered", page_title="Turbo Faller")
-st.title("🚀 Turbo Faller: Online Edition")
-# Placeholders for the game screen and input
-frame_placeholder = st.empty()
-input_placeholder = st.empty()
-
-# --- 2. SETUP & CONSTANTS ---
-WIDTH, HEIGHT = 400, 600
-PLAYER_SIZE = 30
-PLATFORM_HEIGHT = 15
-SKY_BLUE = (30, 40, 60)   
-ACCENT_RED = (255, 60, 90) 
-WHITE = (240, 240, 240)
-
-# Headless Pygame Env
-os.environ["SDL_VIDEODRIVER"] = "dummy" 
-pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
-# Use default font for Streamlit compatibility
-font_small = pygame.font.SysFont(None, 24)
-
-# --- 3. GAME STATE ---
-if 'game_state' not in st.session_state:
-    st.session_state.player = pygame.Rect(WIDTH // 2 - 15, 100, PLAYER_SIZE, PLAYER_SIZE)
-    st.session_state.platforms = [pygame.Rect(random.randint(0, WIDTH-100), i, 100, PLATFORM_HEIGHT) for i in range(100, HEIGHT, 120)]
-    st.session_state.score = 0
+# --- 1. SESSION STATE (The Game's Memory) ---
+if 'initialized' not in st.session_state:
+    st.session_state.player_y = 100
+    st.session_state.player_x = 200
     st.session_state.vel_y = 0
     st.session_state.vel_x = 0
+    st.session_state.score = 0
+    st.session_state.platforms = [[random.randint(0, 300), i] for i in range(100, 600, 120)]
+    st.session_state.initialized = True
 
-# --- 4. WEB INPUT ---
-# Streamlit uses buttons/sliders for web input since it can't "hold" keys easily
+# --- 2. HEADLESS SETUP ---
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+pygame.init()
+WIDTH, HEIGHT = 400, 600
+screen = pygame.Surface((WIDTH, HEIGHT)) # Use a Surface, not a display window
+frame_placeholder = st.empty()
+
+# --- 3. CONTROLS ---
+# Use columns for a clean layout
 col1, col2, col3 = st.columns(3)
 with col1:
-    move_left = st.button("⬅️ Left")
+    move_l = st.button("⬅️ Left")
 with col2:
-    reset = st.button("🔄 Reset")
+    if st.button("🔄 Reset"):
+        del st.session_state.initialized
+        st.rerun()
 with col3:
-    move_right = st.button("Right ➡️")
+    move_r = st.button("Right ➡️")
 
-if reset:
-    st.session_state.clear()
-    st.rerun()
-
-# --- 5. GAME LOGIC ---
-# Adjust velocity based on buttons
-if move_left: st.session_state.vel_x -= 5
-if move_right: st.session_state.vel_x += 5
-st.session_state.vel_x *= 0.9 # Friction
-
-# Gravity and Physics
-st.session_state.vel_y += 0.8
-st.session_state.player.x += st.session_state.vel_x
-st.session_state.player.y += st.session_state.vel_y
-
-# Platform Movement
-for plat in st.session_state.platforms:
-    plat.y -= 3
-    if plat.y < 0:
-        plat.y = HEIGHT
-        plat.x = random.randint(0, WIDTH-100)
-        st.session_state.score += 1
+# --- 4. THE LIVE GAME LOOP ---
+# This loop runs continuously on the Streamlit server
+while True:
+    # Handle Input
+    if move_l: st.session_state.vel_x -= 4
+    if move_r: st.session_state.vel_x += 4
+    st.session_state.vel_x *= 0.9 # Friction
     
-    if st.session_state.player.colliderect(plat) and st.session_state.vel_y > 0:
-        st.session_state.player.bottom = plat.top
-        st.session_state.vel_y = -15
+    # Physics
+    st.session_state.vel_y += 0.8 # Gravity
+    st.session_state.player_x += st.session_state.vel_x
+    st.session_state.player_y += st.session_state.vel_y
+    
+    # Screen Wrap/Bounds
+    if st.session_state.player_x < 0: st.session_state.player_x = 0
+    if st.session_state.player_x > WIDTH - 30: st.session_state.player_x = WIDTH - 30
 
-# --- 6. RENDER TO WEB ---
-screen.fill(SKY_BLUE)
-for plat in st.session_state.platforms:
-    pygame.draw.rect(screen, (100, 200, 255), plat)
-pygame.draw.rect(screen, ACCENT_RED, st.session_state.player)
+    # Platform Logic
+    for p in st.session_state.platforms:
+        p[1] -= 3 # Platforms rise
+        if p[1] < 0:
+            p[1] = HEIGHT
+            p[0] = random.randint(0, 300)
+            st.session_state.score += 1
+        
+        # Collision (Player Y + Size)
+        if (st.session_state.player_y + 30 >= p[1] and 
+            st.session_state.player_y + 30 <= p[1] + 15 and
+            st.session_state.player_x + 30 >= p[0] and 
+            st.session_state.player_x <= p[0] + 100 and 
+            st.session_state.vel_y > 0):
+                st.session_state.vel_y = -16 # Jump!
 
-# Convert Pygame surface to RGB array for Streamlit
-img_array = pygame.surfarray.array3d(screen)
-img_array = np.transpose(img_array, (1, 0, 2))
-frame_placeholder.image(img_array, caption=f"Score: {st.session_state.score}")
+    # --- 5. DRAWING ---
+    screen.fill((30, 40, 60)) # Dark Sky
+    # Draw Platforms
+    for p in st.session_state.platforms:
+        pygame.draw.rect(screen, (80, 150, 255), (p[0], p[1], 100, 15), border_radius=4)
+    # Draw Player
+    pygame.draw.rect(screen, (255, 60, 90), (st.session_state.player_x, st.session_state.player_y, 30, 30), border_radius=6)
+    
+    # --- 6. OUTPUT TO WEB ---
+    img = pygame.surfarray.array3d(screen)
+    img = np.transpose(img, (1, 0, 2))
+    frame_placeholder.image(img, caption=f"Score: {st.session_state.score}", use_container_width=True)
+    
+    # Lose Condition
+    if st.session_state.player_y > HEIGHT:
+        st.error(f"GAME OVER! Score: {st.session_state.score}")
+        time.sleep(2)
+        del st.session_state.initialized
+        st.rerun()
 
-# Auto-refresh the app
-st.button("Tick Game") # Temporary trigger for testing
+    # Control the speed of the loop
+    time.sleep(0.03)
