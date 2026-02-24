@@ -1,6 +1,10 @@
 import pygame
 import random
 import os
+import streamlit as st
+
+# This creates a placeholder in the web app for the game
+frame_placeholder = st.empty()
 
 # --- 1. SETUP & CONSTANTS ---
 WIDTH, HEIGHT = 400, 600
@@ -16,9 +20,10 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Turbo Faller: High-Stakes Edition")
 clock = pygame.time.Clock()
-font_main = pygame.font.SysFont("Verdana", 40, bold=True)
-font_small = pygame.font.SysFont("Verdana", 18, bold=True)
-font_bonus = pygame.font.SysFont("Verdana", 24, bold=True)
+# Change your font lines to this:
+font_main = pygame.font.SysFont("monospace", 40, bold=True)
+font_small = pygame.font.SysFont("monospace", 18, bold=True)
+font_bonus = pygame.font.SysFont("monospace", 24, bold=True)
 
 state = "MENU"
 
@@ -170,6 +175,12 @@ while running:
         canvas.blit(font_small.render(f"SCORE: {score}", True, WHITE), (20, 20))
         screen.blit(canvas, shake_off)
 
-    pygame.display.flip()
+    # Instead of flipping a physical window, we send the image to Streamlit
+    # Convert the Pygame surface to an image Streamlit can show
+    view = pygame.surfarray.array3d(screen)
+    view = view.transpose([1, 0, 2]) # Fix orientation
+    frame_placeholder.image(view, channels="RGB")
+    
+    clock.tick(60)
     clock.tick(60)
 pygame.quit()
