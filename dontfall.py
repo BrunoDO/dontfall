@@ -5,87 +5,81 @@ import streamlit as st
 import numpy as np
 import time
 
-# --- 1. SESSION STATE (The Game's Memory) ---
-if 'initialized' not in st.session_state:
-    st.session_state.player_y = 100
-    st.session_state.player_x = 200
-    st.session_state.vel_y = 0
-    st.session_state.vel_x = 0
-    st.session_state.score = 0
-    st.session_state.platforms = [[random.randint(0, 300), i] for i in range(100, 600, 120)]
-    st.session_state.initialized = True
+# 1. SETUP PAGE
+st.set_page_config(layout="centered", page_title="Turbo Faller")
+st.title("🚀 Turbo Faller")
 
-# --- 2. HEADLESS SETUP ---
+# 2. SESSION STATE INITIALIZATION
+if 'game' not in st.session_state:
+    st.session_state.game = {
+        'px': 200, 'py': 100, 
+        'vx': 0, 'vy': 0, 
+        'score': 0,
+        'platforms': [[random.randint(0, 300), i] for i in range(100, 600, 150)]
+    }
+
+# 3. HEADLESS RENDERER
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 pygame.init()
 WIDTH, HEIGHT = 400, 600
-screen = pygame.Surface((WIDTH, HEIGHT)) # Use a Surface, not a display window
-frame_placeholder = st.empty()
+# We use a Surface instead of a display to prevent "Video system not initialized"
+canvas = pygame.Surface((WIDTH, HEIGHT))
 
-# --- 3. CONTROLS ---
-# Use columns for a clean layout
+# 4. CONTROLS (Using columns for layout)
 col1, col2, col3 = st.columns(3)
 with col1:
-    move_l = st.button("⬅️ Left")
+    if st.button("⬅️ LEFT"): st.session_state.game['vx'] -= 8
 with col2:
-    if st.button("🔄 Reset"):
-        del st.session_state.initialized
+    if st.button("🔄 RESET"):
+        del st.session_state.game
         st.rerun()
 with col3:
-    move_r = st.button("Right ➡️")
+    if st.button("RIGHT ➡️"): st.session_state.game['vx'] += 8
 
-# --- 4. THE LIVE GAME LOOP ---
-# This loop runs continuously on the Streamlit server
-while True:
-    # Handle Input
-    if move_l: st.session_state.vel_x -= 4
-    if move_r: st.session_state.vel_x += 4
-    st.session_state.vel_x *= 0.9 # Friction
-    
-    # Physics
-    st.session_state.vel_y += 0.8 # Gravity
-    st.session_state.player_x += st.session_state.vel_x
-    st.session_state.player_y += st.session_state.vel_y
-    
-    # Screen Wrap/Bounds
-    if st.session_state.player_x < 0: st.session_state.player_x = 0
-    if st.session_state.player_x > WIDTH - 30: st.session_state.player_x = WIDTH - 30
+# 5. PHYSICS & LOGIC
+g = st.session_state.game
+g['vy'] += 1.2  # Gravity
+g['vx'] *= 0.8  # Friction
+g['px'] += g['vx']
+g['py'] += g['vy']
 
-    # Platform Logic
-    for p in st.session_state.platforms:
-        p[1] -= 3 # Platforms rise
-        if p[1] < 0:
-            p[1] = HEIGHT
-            p[0] = random.randint(0, 300)
-            st.session_state.score += 1
-        
-        # Collision (Player Y + Size)
-        if (st.session_state.player_y + 30 >= p[1] and 
-            st.session_state.player_y + 30 <= p[1] + 15 and
-            st.session_state.player_x + 30 >= p[0] and 
-            st.session_state.player_x <= p[0] + 100 and 
-            st.session_state.vel_y > 0):
-                st.session_state.vel_y = -16 # Jump!
-
-    # --- 5. DRAWING ---
-    screen.fill((30, 40, 60)) # Dark Sky
-    # Draw Platforms
-    for p in st.session_state.platforms:
-        pygame.draw.rect(screen, (80, 150, 255), (p[0], p[1], 100, 15), border_radius=4)
-    # Draw Player
-    pygame.draw.rect(screen, (255, 60, 90), (st.session_state.player_x, st.session_state.player_y, 30, 30), border_radius=6)
+# Platform Logic
+for p in g['platforms']:
+    p[1] -= 4  # Rising speed
+    if p[1] < 0:
+        p[1] = HEIGHT
+        p[0] = random.randint(0, 300)
+        g['score'] += 1
     
-    # --- 6. OUTPUT TO WEB ---
-    img = pygame.surfarray.array3d(screen)
-    img = np.transpose(img, (1, 0, 2))
-    frame_placeholder.image(img, caption=f"Score: {st.session_state.score}", use_container_width=True)
-    
-    # Lose Condition
-    if st.session_state.player_y > HEIGHT:
-        st.error(f"GAME OVER! Score: {st.session_state.score}")
-        time.sleep(2)
-        del st.session_state.initialized
-        st.rerun()
+    # Simple Collision
+    if (g['py'] + 30 >= p[1] and g['py'] + 30 <= p[1] + 20 and
+        g['px'] + 30 >= p[0] and g['px'] <= p[0] + 100 and g['vy'] > 0):
+        g['vy'] = -18
 
-    # Control the speed of the loop
-    time.sleep(0.03)
+# Boundary Check
+if g['px'] < 0: g['px'] = 0
+if g['px'] > WIDTH-30: g['px'] = WIDTH-30
+
+# 6. DRAWING
+canvas.fill((30, 40, 60))
+for p in g['platforms']:
+    pygame.draw.rect(canvas, (80, 150, 255), (p[0], p[1], 100, 15), border_radius=4)
+pygame.draw.rect(canvas, (255, 60, 90), (g['px'], g['py'], 30, 30), border_radius=6)
+
+# 7. DISPLAY TO STREAMLIT
+img = pygame.surfarray.array3d(canvas)
+img = np.transpose(img, (1, 0, 2))
+st.image(img, use_container_width=True)
+st.write(f"### Score: {g['score']}")
+
+# Lose Condition
+if g['py'] > HEIGHT:
+    st.error("GAME OVER!")
+    time.sleep(1)
+    del st.session_state.game
+    st.rerun()
+
+# 8. AUTO-TICK (The Secret Sauce)
+# This causes the page to refresh itself every 100ms
+time.sleep(0.1)
+st.rerun()
