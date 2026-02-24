@@ -2,188 +2,86 @@ import pygame
 import random
 import os
 import streamlit as st
+import numpy as np
 
-# This creates a placeholder in the web app for the game
+# --- 1. STREAMLIT SETUP ---
+st.set_page_config(layout="centered", page_title="Turbo Faller")
+st.title("🚀 Turbo Faller: Online Edition")
+# Placeholders for the game screen and input
 frame_placeholder = st.empty()
+input_placeholder = st.empty()
 
-# --- 1. SETUP & CONSTANTS ---
+# --- 2. SETUP & CONSTANTS ---
 WIDTH, HEIGHT = 400, 600
 PLAYER_SIZE = 30
 PLATFORM_HEIGHT = 15
 SKY_BLUE = (30, 40, 60)   
 ACCENT_RED = (255, 60, 90) 
 WHITE = (240, 240, 240)
-GOLD = (255, 215, 0) # For bonus text
 
-# --- 2. INITIALIZATION ---
+# Headless Pygame Env
+os.environ["SDL_VIDEODRIVER"] = "dummy" 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Turbo Faller: High-Stakes Edition")
 clock = pygame.time.Clock()
-# Change your font lines to this:
-font_main = pygame.font.SysFont("monospace", 40, bold=True)
-font_small = pygame.font.SysFont("monospace", 18, bold=True)
-font_bonus = pygame.font.SysFont("monospace", 24, bold=True)
+# Use default font for Streamlit compatibility
+font_small = pygame.font.SysFont(None, 24)
 
-state = "MENU"
+# --- 3. GAME STATE ---
+if 'game_state' not in st.session_state:
+    st.session_state.player = pygame.Rect(WIDTH // 2 - 15, 100, PLAYER_SIZE, PLAYER_SIZE)
+    st.session_state.platforms = [pygame.Rect(random.randint(0, WIDTH-100), i, 100, PLATFORM_HEIGHT) for i in range(100, HEIGHT, 120)]
+    st.session_state.score = 0
+    st.session_state.vel_y = 0
+    st.session_state.vel_x = 0
 
-def load_high_score():
-    try:
-        if os.path.exists("highscore.txt"):
-            with open("highscore.txt", "r") as f:
-                content = f.read().strip()
-                return int(content) if content else 0
-    except Exception:
-        return 0
-    return 0
+# --- 4. WEB INPUT ---
+# Streamlit uses buttons/sliders for web input since it can't "hold" keys easily
+col1, col2, col3 = st.columns(3)
+with col1:
+    move_left = st.button("⬅️ Left")
+with col2:
+    reset = st.button("🔄 Reset")
+with col3:
+    move_right = st.button("Right ➡️")
 
-def save_high_score(new_high):
-    try:
-        with open("highscore.txt", "w") as f:
-            f.write(str(new_high))
-    except Exception as e:
-        print(f"Could not save score: {e}")
+if reset:
+    st.session_state.clear()
+    st.rerun()
 
-high_score = load_high_score()
+# --- 5. GAME LOGIC ---
+# Adjust velocity based on buttons
+if move_left: st.session_state.vel_x -= 5
+if move_right: st.session_state.vel_x += 5
+st.session_state.vel_x *= 0.9 # Friction
 
-def reset_game():
-    return (
-        pygame.Rect(WIDTH // 2 - 15, 100, PLAYER_SIZE, PLAYER_SIZE), 
-        0, 0, 0, 0,
-        [pygame.Rect(random.randint(0, WIDTH-100), i, 100, PLATFORM_HEIGHT) for i in range(100, HEIGHT, 120)],
-        [], # trail
-        100, # last_jump_y (to track fall distance)
-        []   # floating_texts (for bonus popups)
-    )
+# Gravity and Physics
+st.session_state.vel_y += 0.8
+st.session_state.player.x += st.session_state.vel_x
+st.session_state.player.y += st.session_state.vel_y
 
-player, player_vel_y, player_vel_x, score, shake, platforms, trail, last_jump_y, float_texts = reset_game()
-
-# --- 4. MAIN LOOP ---
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT: running = False
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-            if state in ["MENU", "GAME_OVER"]:
-                player, player_vel_y, player_vel_x, score, shake, platforms, trail, last_jump_y, float_texts = reset_game()
-                state = "PLAYING"
-
-    if state == "MENU":
-        screen.fill(SKY_BLUE)
-        screen.blit(font_main.render("TURBO FALLER", True, WHITE), (WIDTH//2 - 140, 220))
-        screen.blit(font_small.render("PRESS SPACE", True, (150, 160, 180)), (WIDTH//2 - 70, 300))
-
-    elif state == "GAME_OVER":
-        screen.fill((20, 20, 25))
-        screen.blit(font_main.render("CRASHED", True, ACCENT_RED), (WIDTH//2 - 100, 220))
-        screen.blit(font_small.render(f"FINAL: {score} | BEST: {high_score}", True, WHITE), (WIDTH//2 - 110, 300))
-
-    elif state == "PLAYING":
-        level = score / 20  
-        current_speed = min(7.5, 2.4 + (level * 1.2))
-        current_gravity = min(2.1, 0.75 + (level * 0.15))
-        current_jump = max(-21, -15 - (level * 1.1))
-        
-        # 1. Movement
-        keys = pygame.key.get_pressed()
-        if key_val == "ArrowLeft":
-            player_vel_x -= (1.3 + level*0.2)
-        elif key_val == "ArrowRight":
-            player_vel_x += (1.3 + level*0.2)
-        else:
-            player_vel_x *= 0.88
-        player_vel_x = max(-13, min(13, player_vel_x))
-        player.x += player_vel_x
-
-        # 2. Trail & Wall Bounce
-        trail.append(player.copy()); 
-        if len(trail) > 6: trail.pop(0)
-        if player.left < 0 or player.right > WIDTH:
-            player.left = 0 if player.left < 0 else WIDTH - PLAYER_SIZE
-            player_vel_x *= -1.1; shake = 3
-
-        # 3. Vertical & Ceiling
-        player_vel_y += current_gravity
-        player.y += player_vel_y
-        if player.top < 0: player.top, player_vel_y, shake = 0, 4, 2
-
-        # 4. Collision & Scoring Logic
-        for plat in platforms:
-            plat.y -= current_speed
-            if plat.y < -PLATFORM_HEIGHT:
-                plat.y, plat.width, plat.x = HEIGHT, max(40, 100 - (score//5)*7), random.randint(0, WIDTH-40)
-                # Standard point for clearing a platform
-                score += 1
-
-            if player.colliderect(plat) and player_vel_y > 0:
-                if player.bottom <= plat.bottom + 15:
-                    # --- SCORING CALCULATIONS ---
-                    fall_dist = player.y - last_jump_y
-                    points_to_add = 1
-                    msg = ""
-
-                    # Distance Bonus (Every 200 pixels of falling adds a point)
-                    if fall_dist > 200:
-                        bonus = int(fall_dist // 200)
-                        points_to_add += bonus
-                        msg += f"FALL +{bonus} "
-
-                    # Center Bonus (Middle 30% of platform)
-                    plat_center = plat.x + plat.width/2
-                    if abs(player.centerx - plat_center) < plat.width * 0.15:
-                        points_to_add *= 2
-                        msg += "PERFECT 2x"
-                        shake = 10 # Big shake for perfect landing
-
-                    score += points_to_add
-                    if msg: float_texts.append({"y": player.y, "x": player.x, "t": msg, "life": 40})
-                    
-                    # Reset jump state
-                    player.bottom, player_vel_y = plat.top, current_jump
-                    last_jump_y = player.y
-                    shake = max(shake, 3)
-
-                elif player_vel_y < 0 and player.top >= plat.top:
-                    player.top, player_vel_y, shake = plat.bottom, 4, 2
-
-        # 5. UI & Floating Text Logic
-        for ft in float_texts[:]:
-            ft["y"] -= 2; ft["life"] -= 1
-            if ft["life"] <= 0: float_texts.remove(ft)
-
-        if player.top > HEIGHT:
-            if score > high_score: 
-                high_score = score
-                with open("highscore.txt", "w") as f: f.write(str(high_score))
-            state = "GAME_OVER"
-
-        # 6. Final Render
-        shake_off = (random.randint(-shake, shake), random.randint(-shake, shake)) if shake > 0 else (0,0)
-        if shake > 0: shake -= 1
-        canvas = pygame.Surface((WIDTH, HEIGHT))
-        canvas.fill(SKY_BLUE)
-
-        for i, pos in enumerate(trail):
-            s = pygame.Surface((PLAYER_SIZE, PLAYER_SIZE)); s.set_alpha((i+1)*30); s.fill(ACCENT_RED)
-            canvas.blit(s, pos)
-
-        for plat in platforms:
-            pygame.draw.rect(canvas, (min(255, 100+score*5), max(40, 200-score*5), 200), plat, border_radius=4)
-        
-        pygame.draw.rect(canvas, WHITE, player, border_radius=6)
-        
-        for ft in float_texts:
-            canvas.blit(font_bonus.render(ft["t"], True, GOLD), (ft["x"] - 20, ft["y"] - 20))
-
-        canvas.blit(font_small.render(f"SCORE: {score}", True, WHITE), (20, 20))
-        screen.blit(canvas, shake_off)
-
-    # Instead of flipping a physical window, we send the image to Streamlit
-    # Convert the Pygame surface to an image Streamlit can show
-    view = pygame.surfarray.array3d(screen)
-    view = view.transpose([1, 0, 2]) # Fix orientation
-    frame_placeholder.image(view, channels="RGB")
+# Platform Movement
+for plat in st.session_state.platforms:
+    plat.y -= 3
+    if plat.y < 0:
+        plat.y = HEIGHT
+        plat.x = random.randint(0, WIDTH-100)
+        st.session_state.score += 1
     
-    clock.tick(60)
-    clock.tick(60)
-pygame.quit()
+    if st.session_state.player.colliderect(plat) and st.session_state.vel_y > 0:
+        st.session_state.player.bottom = plat.top
+        st.session_state.vel_y = -15
+
+# --- 6. RENDER TO WEB ---
+screen.fill(SKY_BLUE)
+for plat in st.session_state.platforms:
+    pygame.draw.rect(screen, (100, 200, 255), plat)
+pygame.draw.rect(screen, ACCENT_RED, st.session_state.player)
+
+# Convert Pygame surface to RGB array for Streamlit
+img_array = pygame.surfarray.array3d(screen)
+img_array = np.transpose(img_array, (1, 0, 2))
+frame_placeholder.image(img_array, caption=f"Score: {st.session_state.score}")
+
+# Auto-refresh the app
+st.button("Tick Game") # Temporary trigger for testing
