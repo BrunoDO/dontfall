@@ -86,9 +86,12 @@ while running:
         
         # 1. Movement
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]: player_vel_x -= (1.3 + level*0.2)
-        elif keys[pygame.K_RIGHT]: player_vel_x += (1.3 + level*0.2)
-        else: player_vel_x *= 0.88
+        if key_val == "ArrowLeft":
+            player_vel_x -= (1.3 + level*0.2)
+        elif key_val == "ArrowRight":
+            player_vel_x += (1.3 + level*0.2)
+        else:
+            player_vel_x *= 0.88
         player_vel_x = max(-13, min(13, player_vel_x))
         player.x += player_vel_x
 
